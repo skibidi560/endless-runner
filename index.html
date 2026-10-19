@@ -1,0 +1,278 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Little Runner</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh;
+  display: grid; place-items: center;
+  background: #172b36; color: white;
+  font-family: system-ui, sans-serif;
+}
+main { width: min(900px, 96vw); text-align: center; }
+h1 { margin: 12px 0 5px; letter-spacing: 3px; }
+p { color: #c4d8dc; margin: 8px 0 16px; }
+canvas {
+  width: 100%; display: block;
+  border: 3px solid #d7eee5; border-radius: 12px;
+  background: #b9e7ed;
+}
+.info {
+  display: flex; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin: 12px 0;
+}
+button {
+  padding: 11px 22px; border: 0; border-radius: 9px;
+  background: #f8c45c; color: #263640;
+  font-size: 16px; font-weight: bold; cursor: pointer;
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>🍃 LITTLE RUNNER</h1>
+  <p>Chạy thật xa. Né mọi chướng ngại vật!</p>
+  <canvas id="game" width="850" height="400"></canvas>
+  <div class="info">
+    <span>🏆 Điểm: <b id="score">0</b></span>
+    <span>⚡ Tốc độ: <b id="speed">1</b></span>
+    <span>Điều khiển: Space / ↑ / chạm màn hình</span>
+  </div>
+  <button id="restart">Chơi lại ↻</button>
+</main>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const speedEl = document.getElementById("speed");
+
+const W = canvas.width, H = canvas.height;
+const ground = 330;
+
+let player, obstacles, particles, score, speed;
+let frame, distance, gameOver, started;
+let best = 0;
+
+function reset() {
+  player = { x: 100, y: ground - 48, w: 32, h: 48,
+             vy: 0, onGround: true };
+  obstacles = [];
+  particles = [];
+  score = 0;
+  speed = 5;
+  frame = 0;
+  distance = 0;
+  gameOver = false;
+  started = false;
+  scoreEl.textContent = "0";
+  speedEl.textContent = "1";
+}
+reset();
+
+function jump() {
+  if (gameOver) {
+    reset();
+    started = true;
+    return;
+  }
+  started = true;
+  if (player.onGround) {
+    player.vy = -13.5;
+    player.onGround = false;
+  }
+}
+
+document.addEventListener("keydown", e => {
+  if (["Space", "ArrowUp", "KeyW"].includes(e.code)) {
+    e.preventDefault();
+    if (!e.repeat) jump();
+  }
+  if (e.code === "Enter" && gameOver) {
+    reset();
+    started = true;
+  }
+});
+canvas.addEventListener("pointerdown", jump);
+document.getElementById("restart").addEventListener("click", () => {
+  reset();
+  started = true;
+});
+
+function rect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+}
+
+function drawBackground() {
+  let sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#8bd6e8");
+  sky.addColorStop(1, "#e0f4d7");
+  rect(0, 0, W, H, sky);
+
+  // Sun
+  ctx.fillStyle = "#ffe69a";
+  ctx.beginPath();
+  ctx.arc(710, 72, 32, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Distant hills
+  for (let layer = 0; layer < 2; layer++) {
+    ctx.fillStyle = layer === 0 ? "#9bcfba" : "#71b59b";
+    ctx.beginPath();
+    ctx.moveTo(0, ground);
+    for (let x = 0; x <= W; x += 5) {
+      let y = 245 + layer * 34
+        + Math.sin((x + distance * (layer + 1) * 0.25) / 75) * 22;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, ground);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Scrolling grass
+  rect(0, ground, W, H - ground, "#579b63");
+  rect(0, ground, W, 8, "#36754c");
+
+  for (let x = -30; x < W + 30; x += 38) {
+    let px = ((x - distance * 1.4) % (W + 38) + W + 38) % (W + 38);
+    rect(px, ground + 20, 15, 3, "#76b775");
+    rect(px + 8, ground + 45, 9, 3, "#76b775");
+  }
+}
+
+function drawPlayer() {
+  let p = player;
+  let bob = p.onGround && started && !gameOver
+    ? Math.sin(frame * 0.35) * 2 : 0;
+  let y = p.y + bob;
+
+  // Shadow
+  ctx.fillStyle = "rgba(25,55,42,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(p.x + 18, ground + 2, 23, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Legs
+  let leg = p.onGround && started && !gameOver
+    ? Math.sin(frame * 0.45) * 8 : 0;
+  rect(p.x + 7, y + 32, 8, 12 + leg, "#304e68");
+  rect(p.x + 20, y + 32, 8, 12 - leg, "#304e68");
+  rect(p.x + 3, y + 42 + leg, 14, 6, "#f7f0d5");
+  rect(p.x + 18, y + 42 - leg, 14, 6, "#f7f0d5");
+
+  // Body and head
+  rect(p.x + 5, y + 15, 25, 21, "#f28f62");
+  rect(p.x + 3, y + 20, 5, 13, "#f28f62");
+  rect(p.x + 8, y, 21, 21, "#ffd2a1");
+  rect(p.x + 21, y + 7, 4, 4, "#263640");
+  rect(p.x + 5, y - 3, 23, 7, "#304e68");
+  rect(p.x + 11, y - 8, 13, 7, "#304e68");
+}
+
+function spawnObstacle() {
+  let type = Math.random();
+  let h = type < 0.5 ? 30 + Math.random() * 15 : 42;
+  let w = type < 0.5 ? 25 : 20;
+  obstacles.push({ x: W + 20, y: ground - h, w, h });
+}
+
+function drawObstacle(o) {
+  if (o.h < 40) {
+    // Rock
+    ctx.fillStyle = "#727d81";
+    ctx.beginPath();
+    ctx.moveTo(o.x, ground);
+    ctx.lineTo(o.x + 4, o.y + 10);
+    ctx.lineTo(o.x + o.w * 0.5, o.y);
+    ctx.lineTo(o.x + o.w, o.y + 8);
+    ctx.lineTo(o.x + o.w, ground);
+    ctx.closePath();
+    ctx.fill();
+    rect(o.x + 7, o.y + 13, 7, 3, "#aeb9b5");
+  } else {
+    // Wooden barrier
+    rect(o.x, o.y, o.w, o.h, "#8c5538");
+    rect(o.x - 5, o.y + 7, o.w + 10, 8, "#c8864d");
+    rect(o.x + 5, o.y + 23, 5, 9, "#d7a36a");
+  }
+}
+
+function drawOverlay(title, subtitle) {
+  ctx.fillStyle = "rgba(18,39,48,0.62)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 38px system-ui";
+  ctx.fillText(title, W / 2, 160);
+  ctx.font = "18px system-ui";
+  ctx.fillText(subtitle, W / 2, 205);
+  ctx.textAlign = "left";
+}
+
+function update() {
+  if (!started || gameOver) return;
+
+  frame++;
+  score = Math.floor(distance / 10);
+  speed = Math.min(5 + score / 180, 12);
+  distance += speed;
+
+  player.vy += 0.65;
+  player.y += player.vy;
+
+  if (player.y + player.h >= ground) {
+    player.y = ground - player.h;
+    player.vy = 0;
+    player.onGround = true;
+  }
+
+  if (frame % Math.max(38, Math.floor(90 - speed * 3)) === 0) {
+    spawnObstacle();
+  }
+
+  obstacles.forEach(o => o.x -= speed);
+  obstacles = obstacles.filter(o => o.x + o.w > 0);
+
+  for (const o of obstacles) {
+    if (player.x + player.w - 5 > o.x + 3 &&
+        player.x + 5 < o.x + o.w - 3 &&
+        player.y + player.h - 3 > o.y + 4) {
+      gameOver = true;
+      best = Math.max(best, score);
+      break;
+    }
+  }
+
+  scoreEl.textContent = score;
+  speedEl.textContent = (speed / 5).toFixed(1);
+}
+
+function draw() {
+  drawBackground();
+
+  obstacles.forEach(drawObstacle);
+  drawPlayer();
+
+  if (!started && !gameOver) {
+    drawOverlay("SẴN SÀNG CHƯA?", "Nhấn SPACE hoặc chạm màn hình để chạy");
+  }
+  if (gameOver) {
+    drawOverlay("GAME OVER", `Điểm: ${score}  •  Kỷ lục: ${best}  •  Chơi lại để thử sức!`);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
